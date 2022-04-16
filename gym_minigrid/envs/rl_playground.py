@@ -1,5 +1,6 @@
 from gym_minigrid.minigrid import *
 from gym_minigrid.register import register
+import copy
 
 class SafeExplorationEnv(MiniGridEnv):
     """
@@ -67,6 +68,15 @@ class SafeExplorationEnv(MiniGridEnv):
             "reach the green goal square, dealing with obstacles and lava"
         )
     
+    def construct_state_vector(self, agent_pos, agent_dir):
+        # center units and concatentate
+        agent_pos = copy.deepcopy(agent_pos)
+        agent_dir = copy.deepcopy(agent_dir)
+        agent_pos[0] -= self.width//2
+        agent_pos[1] -= self.height//2
+        agent_dir -= 1
+        return np.append(self.agent_pos, self.agent_dir)
+    
     def step(self, action):
         # Get the position in front of the agent
         fwd_pos = self.front_pos
@@ -74,24 +84,26 @@ class SafeExplorationEnv(MiniGridEnv):
         # Get the contents of the cell in front of the agent
         fwd_cell = self.grid.get(*fwd_pos)
         obs, reward, done, info = super().step(action)
-        step_cost = -1.5
+        step_cost = 1
         if action == self.actions.forward and fwd_cell != None and fwd_cell.type == 'lava':
-            reward = step_cost*(1.2*self.max_steps)
+            reward = -step_cost*(1.1*self.max_steps)
             self.statistics['lava_count'] += 1
         elif action == self.actions.forward and fwd_cell != None and fwd_cell.type == 'goal':
-            reward = 1.1*self.max_steps
+            reward = step_cost*self.max_steps*1.1
         elif action == self.actions.forward and fwd_cell != None and fwd_cell.type == 'wall':
-            reward = step_cost
-        elif done:
-            reward = -1.1*np.mean((self.agent_pos - self.goal_state)**2)
+            reward = -step_cost
         
-        reward += step_cost
+        if done:
+            reward -= np.mean((self.agent_pos - self.goal_state)**2)
+        else:
+            reward -= step_cost
+
         self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
-        info = dict(state_vector=np.append(self.agent_pos, self.agent_dir), **info)
+        info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
         return obs, self.reward_multiplier * reward, done, info
     
     def reset(self):
-        return super().reset(), dict(state_vector=np.append(self.agent_pos, self.agent_dir))
+        return super().reset(), dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
 
 class RLExperimentS21(SafeExplorationEnv):
     def __init__(self):
