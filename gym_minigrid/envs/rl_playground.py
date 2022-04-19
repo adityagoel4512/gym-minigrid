@@ -14,6 +14,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.statistics_arr = dict(lava_count=[])
         lava_setups = {
             'corner': self.corner_lava,
+            'wall': self.wall_lava,
             'none': lambda width, height, y_wall, end_x_wall: ()
         }
         self.lava_setup = lava_setups[lava_setup]
@@ -39,6 +40,10 @@ class SafeExplorationEnv(MiniGridEnv):
         # for i in range(2):
         #     self.grid.horz_wall(1, y_wall+i+1, end_x_wall-i, Lava)
 
+    def wall_lava(self, width, height, y_wall, end_x_wall):
+        # Place lava (to measure safety of training)
+        self.grid.horz_wall(1, y_wall-1, end_x_wall, Lava)
+        self.grid.horz_wall(1, height//2, end_x_wall, Lava)
 
     def _gen_grid(self, width, height):
         assert width % 2 == 1 and height % 2 == 1  # odd size
@@ -50,7 +55,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.grid.wall_rect(0, 0, width, height)
         
         # Generate barrier wall
-        end_x_wall = 11*width//20
+        end_x_wall = width//2
         y_wall = height//2
         self.grid.horz_wall(1, y_wall-1, end_x_wall, Wall)
         self.grid.horz_wall(1, height//2, end_x_wall, Wall)
@@ -89,15 +94,15 @@ class SafeExplorationEnv(MiniGridEnv):
             reward = -step_cost*(1.1*self.max_steps)
             self.statistics['lava_count'] += 1
         elif action == self.actions.forward and fwd_cell != None and fwd_cell.type == 'goal':
-            reward = step_cost*self.max_steps*1.1
+            reward = step_cost*self.max_steps*1.25
         elif action == self.actions.forward and fwd_cell != None and fwd_cell.type == 'wall':
             reward = -step_cost
         
         if done:
             reward -= np.mean((self.agent_pos - self.goal_state)**2)
         else:
-            reward -= step_cost
-
+            reward -= 2.2*step_cost
+        
         self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
         return obs, self.reward_multiplier * reward, done, info
