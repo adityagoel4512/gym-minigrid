@@ -76,7 +76,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.grid.wall_rect(0, 0, width, height)
         
         # Generate barrier wall
-        end_x_wall = width//2
+        end_x_wall = 11*width//20
         y_wall = height//2
         self.grid.horz_wall(1, y_wall-1, end_x_wall, Wall)
         self.grid.horz_wall(1, y_wall, end_x_wall, Wall)
@@ -119,8 +119,8 @@ class SafeExplorationEnv(MiniGridEnv):
         reward = 0
         step_cost = 1
         if action == self.actions.forward and fwd_cell != None and fwd_cell.type == 'lava':
-            reward = -100
-            # reward = -10000
+            # reward = -100
+            reward = -4000
             self.statistics['lava_count'] += 1
         elif action == self.actions.forward and fwd_cell != None and fwd_cell.type == 'goal':
             reward = step_cost*self.max_steps*1.25
@@ -139,7 +139,7 @@ class SafeExplorationEnv(MiniGridEnv):
     def reset(self):
         return super().reset(), dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
 
-    def transitions_for_offline_data(self):
+    def transitions_for_offline_data(self, extra_data=False):
         for col, row, cell in self.offline_cells():
             print(col, row, cell)
             for dir in range(4):
@@ -154,7 +154,10 @@ class SafeExplorationEnv(MiniGridEnv):
                     if new_cell is None or new_cell.type != 'lava':
                         next_state_trace = torch.from_numpy(np.concatenate(self.construct_state_vector(self.agent_pos, self.agent_dir), axis=None)).float().unsqueeze(0)
                         assert next_state_trace is not None, ('not none!', Transition(state=state_vector, action=action, reward=reward, next_state=next_state_trace))
-                        reward = torch.tensor([[reward]])
-                        action = torch.tensor([[action]])
+                        reward = torch.tensor([[reward]], requires_grad=False)
+                        action = torch.tensor([[action]], requires_grad=False)
                         print(Transition(state=state_vector, action=action, reward=reward, next_state=next_state_trace))
                         yield Transition(state=state_vector, action=action, reward=reward, next_state=next_state_trace)
+                        if extra_data:
+                            yield Transition(state=state_vector + torch.tensor([[0.15, 0, 0]], requires_grad=False), action=action, reward=reward, next_state=next_state_trace + torch.tensor([[0.15, 0, 0]], requires_grad=False))
+                            yield Transition(state=state_vector + torch.tensor([[0, 0.15, 0]], requires_grad=False), action=action, reward=reward, next_state=next_state_trace + torch.tensor([[0, 0.15, 0]], requires_grad=False))
