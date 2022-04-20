@@ -130,7 +130,7 @@ class SafeExplorationEnv(MiniGridEnv):
         if done:
             reward -= np.mean((self.agent_pos - self.goal_state)**2)
         else:
-            reward -= 2.2*step_cost
+            reward -= 2.1*step_cost
         
         self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
