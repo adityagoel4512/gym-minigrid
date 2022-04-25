@@ -47,6 +47,7 @@ OBJECT_TO_IDX = {
     'goal'          : 8,
     'lava'          : 9,
     'agent'         : 10,
+    'text'         : 11,
 }
 
 IDX_TO_OBJECT = dict(zip(OBJECT_TO_IDX.values(), OBJECT_TO_IDX.keys()))
@@ -177,6 +178,24 @@ class Floor(WorldObj):
         color = COLORS[self.color] / 2
         fill_coords(img, point_in_rect(0.031, 1, 0.031, 1), color)
 
+class Text(WorldObj):
+    """
+    Colored floor tile the agent can walk over
+    """
+
+    def __init__(self, text='*'):
+        super().__init__('text', 'yellow')
+
+    def can_overlap(self):
+        return True
+
+    def render(self, img):
+        # Give the floor a pale color
+        color = COLORS[self.color] / 2
+        xmin, xmax, ymin, ymax = 0, 1, 0, 1
+        mid_point = ((xmax-xmin)/2 + xmin, (ymax-ymin)/2 + ymin)
+        fill_coords(img, point_in_triangle((xmin, ymin), (xmax, ymin), mid_point), color)
+        
 
 class Lava(WorldObj):
     def __init__(self):

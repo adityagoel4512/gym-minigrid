@@ -108,6 +108,11 @@ def point_in_triangle(a, b, c):
 
     return fn
 
+def text_in_shape(shape_fn, txt):
+    fn = shape_fn()
+
+    
+
 def highlight_img(img, color=(255, 255, 255), alpha=0.30):
     """
     Add highlighting to an image
