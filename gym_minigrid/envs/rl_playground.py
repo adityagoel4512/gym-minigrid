@@ -9,18 +9,6 @@ import copy
 import torch
 from collections import namedtuple
 
-@dataclass
-class Transition:
-    state: torch.tensor
-    action: torch.tensor
-    reward: torch.tensor
-    next_state: torch.tensor
-
-    def __eq__(self, __o: object) -> bool:
-        if not isinstance(__o, Transition):
-            return False
-        
-
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'))
 class SafeExplorationEnv(MiniGridEnv):
     """
@@ -143,11 +131,11 @@ class SafeExplorationEnv(MiniGridEnv):
         if fwd_cell is not None and action == self.actions.forward:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
-                reward = -3500
+                reward = -step_cost*self.max_steps
                 if not self.pause_stats:
                     self.statistics['lava_count'] += 1
             elif fwd_cell.type == 'goal':
-                reward = step_cost*self.max_steps*2.1
+                reward = step_cost*self.max_steps*1.25
             elif fwd_cell.type == 'wall':
                 reward = -step_cost
         
