@@ -15,7 +15,7 @@ class SafeExplorationEnv(MiniGridEnv):
     Environment with wall or lava obstacles, sparse reward.
     """
 
-    def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, reward_multiplier=0.1, offline_regions=False):
+    def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, reward_multiplier=0.1, offline_regions=False, rand_choices=3):
         self.initial_state = initial_state
         self.reward_multiplier = reward_multiplier
         self.statistics = dict(lava_count=0)
@@ -29,6 +29,7 @@ class SafeExplorationEnv(MiniGridEnv):
         }
         
         self.lava_setup = lava_setups[lava_setup]
+        self.rand_choices = rand_choices
 
         super().__init__(
             grid_size=size,
@@ -66,7 +67,6 @@ class SafeExplorationEnv(MiniGridEnv):
         lava_y = y_wall-1
         
         
-        # self.grid.vert_wall(width-2, 1, height-2, Lava)
         corner_height = 3
         for c in range(corner_height):
             self.grid.vert_wall(width-c-2, height-corner_height+c-1, corner_height-c, Lava)
@@ -76,8 +76,9 @@ class SafeExplorationEnv(MiniGridEnv):
 
     def wall_lava(self, width, height, y_wall, end_x_wall):
         # Place lava (to measure safety of training)
-        self.grid.horz_wall(1, y_wall-1, end_x_wall, Lava)
-        self.grid.horz_wall(1, height//2, end_x_wall, Lava)
+        self.grid.horz_wall(1, y_wall+1, end_x_wall, Lava)
+        self.grid.horz_wall(1, y_wall, end_x_wall, Lava)
+        # self.grid.vert_wall(width-2, 1, height-2, Lava)
 
 
     def _gen_grid(self, width, height, state=None, dir=None):
@@ -90,17 +91,19 @@ class SafeExplorationEnv(MiniGridEnv):
         self.grid.wall_rect(0, 0, width, height)
         
         # Generate barrier wall
-        end_x_wall = 11*width//20
+        end_x_wall = 1*width//2 - 1
         y_wall = height//2
-        self.grid.horz_wall(1, y_wall-1, end_x_wall, Wall)
-        self.grid.horz_wall(1, y_wall, end_x_wall, Wall)
+        # self.grid.horz_wall(1, y_wall+1, end_x_wall, Wall)
+        # self.grid.horz_wall(1, y_wall, end_x_wall, Wall)
+
+        # choices = np.linspace(3, width-3, num=self.rand_choices, dtype=np.int)
+        option_x = width//3
 
         # Place the agent in the top-left corner
-        self.agent_pos = np.array(state or self.initial_state)
-        self.agent_dir = dir or 0
+        self.agent_pos = np.array(state or (option_x, self.initial_state[1]))
+        self.agent_dir = dir or np.random.randint(0, high=4)
 
-        # Place a goal square in the bottom-right corner
-        self.goal_state = np.array([3, height-4])
+        self.goal_state = np.array([width//3, height-4])
         self.put_obj(Goal(), self.goal_state[0], self.goal_state[1])
         self.lava_setup(width, height, y_wall, end_x_wall)  
         if self.offline_regions:      
@@ -131,22 +134,18 @@ class SafeExplorationEnv(MiniGridEnv):
         if fwd_cell is not None and action == self.actions.forward:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
-                reward = -step_cost*self.max_steps
+                reward = -self.max_steps
                 if not self.pause_stats:
                     self.statistics['lava_count'] += 1
             elif fwd_cell.type == 'goal':
-                reward = step_cost*self.max_steps*1.25
+                reward = step_cost*self.max_steps*1.6
             elif fwd_cell.type == 'wall':
                 reward = -step_cost
-        
-        # if done:
-        #     reward -= np.mean((self.agent_pos - self.goal_state)**2)
-        # else:
-        #     reward -= 2.1*step_cost
+
         if not self.pause_stats:
             self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
-        return obs, self.reward_multiplier * reward, done, info
+        return info['state_vector'], self.reward_multiplier * reward, done, info
 
     def reset(self):
         self.pause_stats = False
@@ -159,9 +158,18 @@ class SafeExplorationEnv(MiniGridEnv):
                 yield transition
         self.step_count = steps
 
-    def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False):
+    def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False):
         steps = self.step_count
+        def neighbour_state_lava(col, row):
+            for n_col, n_row in [(col-1, row), (col+1, row), (col, row-1), (col, row+1)]:
+                cell = self.grid.get(n_col, n_row)
+                if cell is not None and cell.type == 'lava':
+                    return True
+            return False
+
         for col, row, cell in self.offline_cells():
+            if exclude_lava_neighbours and neighbour_state_lava(col, row):
+                continue
             print(col, row, cell)
             for dir in range(4):
                 for action in (self.actions.forward, self.actions.left, self.actions.right):
