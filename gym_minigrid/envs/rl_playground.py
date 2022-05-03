@@ -8,6 +8,7 @@ from gym_minigrid.register import register
 import copy
 import torch
 from collections import namedtuple
+from const import STEP_COST, MULTIPLIER
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'))
 class SafeExplorationEnv(MiniGridEnv):
@@ -15,9 +16,8 @@ class SafeExplorationEnv(MiniGridEnv):
     Environment with wall or lava obstacles, sparse reward.
     """
 
-    def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, reward_multiplier=0.1, offline_regions=False, rand_choices=3):
+    def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, offline_regions=False, rand_choices=3):
         self.initial_state = initial_state
-        self.reward_multiplier = reward_multiplier
         self.statistics = dict(lava_count=0)
         self.offline_regions = offline_regions
         self.statistics_arr = dict(lava_count=[])
@@ -62,10 +62,7 @@ class SafeExplorationEnv(MiniGridEnv):
     #             self.grid.set(col, row, Floor(color='blue'))
     
     def corner_lava(self, width, height, y_wall, end_x_wall):
-
-        # Place lava (to measure safety of training)
-        lava_y = y_wall-1
-        
+        self.wall_lava(width, height, y_wall, end_x_wall)
         
         corner_height = 3
         for c in range(corner_height):
@@ -101,9 +98,9 @@ class SafeExplorationEnv(MiniGridEnv):
 
         # Place the agent in the top-left corner
         self.agent_pos = np.array(state or (option_x, self.initial_state[1]))
-        self.agent_dir = dir or np.random.randint(0, high=4)
+        self.agent_dir = dir if dir is not None else np.random.randint(0, high=4)
 
-        self.goal_state = np.array([width//3, height-4])
+        self.goal_state = np.array([3, height-4])
         self.put_obj(Goal(), self.goal_state[0], self.goal_state[1])
         self.lava_setup(width, height, y_wall, end_x_wall)  
         if self.offline_regions:      
@@ -134,18 +131,19 @@ class SafeExplorationEnv(MiniGridEnv):
         if fwd_cell is not None and action == self.actions.forward:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
-                reward = -self.max_steps
+                reward = -self.max_steps*STEP_COST
                 if not self.pause_stats:
                     self.statistics['lava_count'] += 1
             elif fwd_cell.type == 'goal':
-                reward = step_cost*self.max_steps*1.6
+                reward = step_cost*self.max_steps*1.5
             elif fwd_cell.type == 'wall':
                 reward = -step_cost
 
         if not self.pause_stats:
             self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
+
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
-        return info['state_vector'], self.reward_multiplier * reward, done, info
+        return info['state_vector'], MULTIPLIER * reward, done, info
 
     def reset(self):
         self.pause_stats = False
@@ -158,7 +156,8 @@ class SafeExplorationEnv(MiniGridEnv):
                 yield transition
         self.step_count = steps
 
-    def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False):
+    def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False, n_step=1, gamma=0.99):
+        self.pause_statistics()
         steps = self.step_count
         def neighbour_state_lava(col, row):
             for n_col, n_row in [(col-1, row), (col+1, row), (col, row-1), (col, row+1)]:
@@ -167,42 +166,55 @@ class SafeExplorationEnv(MiniGridEnv):
                     return True
             return False
 
+
+        def replicate(g, n, res):
+            if n == 0:
+                yield [n for n in res]
+            else:
+                for elem in g:
+                    res.append(elem)
+                    yield from replicate(g, n-1, res)
+                    res.pop()
+
         for col, row, cell in self.offline_cells():
             if exclude_lava_neighbours and neighbour_state_lava(col, row):
                 continue
             print(col, row, cell)
             for dir in range(4):
-                for action in (self.actions.forward, self.actions.left, self.actions.right):
-                    for cur_step_count in (0,):
-                        self.step_count = cur_step_count
-                        cell = self.grid.get(col, row)
-                        # sets grid world in desired state and direction
-                        self._gen_grid(self.width, self.height, (col, row), dir)
+                for action_sequence in replicate((self.actions.forward, self.actions.left, self.actions.right), n_step, []):
+                    print(action_sequence)
+                    self._gen_grid(self.width, self.height, (col, row), dir)
+                    state_vector = torch.from_numpy(
+                        np.concatenate(self.construct_state_vector(self.agent_pos, self.agent_dir),
+                                       axis=None)).float().unsqueeze(0)
+                    action_vector = torch.tensor([[action_sequence[0]]], requires_grad=False)
+                    cumulative_reward = 0
+                    for i, action in enumerate(action_sequence):
                         fwd_cell = self.grid.get(*self.front_pos)
-                        state_vector = torch.from_numpy(np.concatenate(self.construct_state_vector(self.agent_pos, self.agent_dir), axis=None)).float().unsqueeze(0)
-                        if include_lava_actions or (self.actions.forward != action or fwd_cell is None or fwd_cell.type != 'lava'):
-                            # executes action, observes reward and next state
-                            _, reward, _, _ = self.step(action)
-                            new_cell = self.grid.get(self.agent_pos[0], self.agent_pos[1])
-                            next_state_trace = torch.from_numpy(np.concatenate(self.construct_state_vector(self.agent_pos, self.agent_dir), axis=None)).float().unsqueeze(0)
-                            assert next_state_trace is not None, ('not none!', Transition(state=state_vector, action=action, reward=reward, next_state=next_state_trace))
-                            reward = torch.tensor([[reward]], requires_grad=False)
-                            action = torch.tensor([[action]], requires_grad=False)
-                            if not(self.actions.forward != action or fwd_cell is None or fwd_cell.type != 'lava'):
+                        if include_lava_actions or (
+                                self.actions.forward != action or fwd_cell is None or fwd_cell.type != 'lava'):
+                            _, reward, _, done = self.step(action)
+                            cumulative_reward += (reward - STEP_COST) * (gamma ** i)
+                            if self.actions.forward == action and fwd_cell is not None and fwd_cell.type == 'lava':
                                 print('lava action!')
                             elif self.actions.forward == action and fwd_cell is not None and fwd_cell.type == 'goal':
                                 print('goal action!')
-                            print(Transition(state=state_vector, action=action, reward=reward, next_state=next_state_trace))
-                            yield Transition(state=state_vector, action=action, reward=reward, next_state=next_state_trace)
-                            if extra_data:
-                                if action != self.actions.forward or dir != -1 or new_cell is None or new_cell.type != 'wall':
-                                    yield Transition(state=state_vector + torch.tensor([[0.15, 0, 0]], requires_grad=False), action=action, reward=reward, next_state=next_state_trace + torch.tensor([[0.15, 0, 0]], requires_grad=False))
-                                # if action != self.actions.forward or dir != 0  or new_cell is None or new_cell.type != 'wall':
-                                #     yield Transition(state=state_vector + torch.tensor([[0, 0.15, 0]], requires_grad=False), action=action, reward=reward, next_state=next_state_trace + torch.tensor([[0, 0.15, 0]], requires_grad=False))        
+
+                            if done or i == (len(action_sequence)-1):
+                                next_state_trace = torch.from_numpy(
+                                    np.concatenate(self.construct_state_vector(self.agent_pos, self.agent_dir),
+                                                   axis=None)).float().unsqueeze(0)
+                                reward = torch.tensor([[cumulative_reward]], requires_grad=False)
+                                print(Transition(state=state_vector, action=action_vector, reward=reward,
+                                                 next_state=next_state_trace))
+                                yield Transition(state=state_vector, action=action_vector, reward=reward,
+                                                 next_state=next_state_trace)
+                                break
                         else:
                             print('')
                             print('lava state + action')
                             print(state_vector)
-                            print(action)                            
-        self.step_count = steps
-                            
+                            print(action)
+
+
+
