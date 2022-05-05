@@ -135,7 +135,7 @@ class SafeExplorationEnv(MiniGridEnv):
                 if not self.pause_stats:
                     self.statistics['lava_count'] += 1
             elif fwd_cell.type == 'goal':
-                reward = step_cost*self.max_steps*1.5
+                reward = STEP_COST*self.max_steps*1.5
             elif fwd_cell.type == 'wall':
                 reward = -step_cost
 
