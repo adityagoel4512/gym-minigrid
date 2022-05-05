@@ -10,7 +10,8 @@ import torch
 from collections import namedtuple
 from const import STEP_COST, MULTIPLIER
 
-Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state'))
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
+
 class SafeExplorationEnv(MiniGridEnv):
     """
     Environment with wall or lava obstacles, sparse reward.
@@ -206,9 +207,9 @@ class SafeExplorationEnv(MiniGridEnv):
                                                    axis=None)).float().unsqueeze(0)
                                 reward = torch.tensor([[cumulative_reward]], requires_grad=False)
                                 print(Transition(state=state_vector, action=action_vector, reward=reward,
-                                                 next_state=next_state_trace))
+                                                 next_state=next_state_trace, done=done))
                                 yield Transition(state=state_vector, action=action_vector, reward=reward,
-                                                 next_state=next_state_trace)
+                                                 next_state=next_state_trace, done=done)
                                 break
                         else:
                             print('')
