@@ -42,8 +42,8 @@ class SafeExplorationEnv(MiniGridEnv):
     def pause_statistics(self):
         self.pause_stats = True
 
-    def all_cells(self):
-        for row in range(self.height):
+    def all_cells(self, top_to_bottom=False):
+        for row in range(self.height-1, -1, -1) if top_to_bottom else range(self.height):
             for col in range(self.width):
                 yield col, row, self.grid.get(col, row)
 
@@ -76,6 +76,7 @@ class SafeExplorationEnv(MiniGridEnv):
         # Place lava (to measure safety of training)
         self.grid.horz_wall(1, y_wall+1, end_x_wall, Lava)
         self.grid.horz_wall(1, y_wall, end_x_wall, Lava)
+        self.grid.horz_wall(1, y_wall-1, end_x_wall, Lava)
         # self.grid.vert_wall(width-2, 1, height-2, Lava)
 
 
@@ -157,7 +158,7 @@ class SafeExplorationEnv(MiniGridEnv):
                 yield transition
         self.step_count = steps
 
-    def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False, n_step=1, gamma=0.99):
+    def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False, n_step=1, gamma=0.99, cut_step_cost=False):
         self.pause_statistics()
         steps = self.step_count
         def neighbour_state_lava(col, row):
@@ -195,7 +196,10 @@ class SafeExplorationEnv(MiniGridEnv):
                         if include_lava_actions or (
                                 self.actions.forward != action or fwd_cell is None or fwd_cell.type != 'lava'):
                             _, reward, _, done = self.step(action)
-                            cumulative_reward += (reward - STEP_COST) * (gamma ** i)
+                            if cut_step_cost:
+                                cumulative_reward += (reward - STEP_COST) * (gamma ** i)
+                            else:
+                                cumulative_reward += reward * (gamma ** i)
                             if self.actions.forward == action and fwd_cell is not None and fwd_cell.type == 'lava':
                                 print('lava action!')
                             elif self.actions.forward == action and fwd_cell is not None and fwd_cell.type == 'goal':
