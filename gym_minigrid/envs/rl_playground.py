@@ -1,7 +1,7 @@
 from collections import namedtuple
 
 import torch
-from const import STEP_COST, MULTIPLIER
+from const import *
 from gym_minigrid.minigrid import *
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
