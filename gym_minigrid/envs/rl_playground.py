@@ -83,7 +83,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.grid = Grid(width, height)
 
         # Generate the surrounding walls
-        self.grid.wall_rect(0, 0, width, height)
+        self.grid.wall_rect(0, 0, width, height, Wall)
 
         # Generate barrier wall
         end_x_wall = 1 * width // 2 - 1
@@ -155,7 +155,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.step_count = steps
 
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
-                                     n_step=1, gamma=0.99, cut_step_cost=False):
+                                     n_step=1, cut_step_cost=False):
         self.pause_statistics()
         steps = self.step_count
 
@@ -195,9 +195,9 @@ class SafeExplorationEnv(MiniGridEnv):
                                 self.actions.forward != action or fwd_cell is None or fwd_cell.type != 'lava'):
                             _, reward, _, done = self.step(action)
                             if cut_step_cost:
-                                cumulative_reward += (reward - STEP_COST) * (gamma ** i)
+                                cumulative_reward += (reward - STEP_COST) * (GAMMA ** i)
                             else:
-                                cumulative_reward += reward * (gamma ** i)
+                                cumulative_reward += reward * (GAMMA ** i)
                             if self.actions.forward == action and fwd_cell is not None and fwd_cell.type == 'lava':
                                 print('lava action!')
                             elif self.actions.forward == action and fwd_cell is not None and fwd_cell.type == 'goal':
