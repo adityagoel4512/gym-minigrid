@@ -155,7 +155,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.step_count = steps
 
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
-                                     n_step=1, cut_step_cost=False):
+                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA):
         self.pause_statistics()
         steps = self.step_count
 
