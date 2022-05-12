@@ -97,6 +97,7 @@ class SafeExplorationEnv(MiniGridEnv):
         # Place the agent in the top-left corner
         self.agent_pos = np.array(state or (option_x, self.initial_state[1]))
         self.agent_dir = dir if dir is not None else np.random.randint(0, high=4)
+        self.step_count = 0
 
         self.goal_state = np.array([3, height - 4])
         self.put_obj(Goal(), self.goal_state[0], self.goal_state[1])
@@ -147,17 +148,10 @@ class SafeExplorationEnv(MiniGridEnv):
         self.pause_stats = False
         return super().reset(), dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
 
-    def half_offline_data(self):
-        steps = self.step_count
-        for transition in self.transitions_for_offline_data():
-            if transition.state.squeeze()[1] < 0:
-                yield transition
-        self.step_count = steps
-
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
-                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA):
+                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA,
+                                     include_post_terminal_transitions=False):
         self.pause_statistics()
-        steps = self.step_count
 
         def neighbour_state_lava(col, row):
             for n_col, n_row in [(col - 1, row), (col + 1, row), (col, row - 1), (col, row + 1)]:
@@ -193,7 +187,7 @@ class SafeExplorationEnv(MiniGridEnv):
                         fwd_cell = self.grid.get(*self.front_pos)
                         if include_lava_actions or (
                                 self.actions.forward != action or fwd_cell is None or fwd_cell.type != 'lava'):
-                            _, reward, _, done = self.step(action)
+                            _, reward, done, _ = self.step(action)
                             if cut_step_cost:
                                 cumulative_reward += (reward - STEP_COST) * (GAMMA ** i)
                             else:
@@ -208,6 +202,8 @@ class SafeExplorationEnv(MiniGridEnv):
                                     np.concatenate(self.construct_state_vector(self.agent_pos, self.agent_dir),
                                                    axis=None)).float().unsqueeze(0)
                                 reward = torch.tensor([[cumulative_reward]], requires_grad=False)
+                                if done and not include_post_terminal_transitions:
+                                    next_state_trace = None
                                 print(Transition(state=state_vector, action=action_vector, reward=reward,
                                                  next_state=next_state_trace, done=done))
                                 yield Transition(state=state_vector, action=action_vector, reward=reward,
