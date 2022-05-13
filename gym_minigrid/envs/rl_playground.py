@@ -204,10 +204,10 @@ class SafeExplorationEnv(MiniGridEnv):
                                 reward = torch.tensor([[cumulative_reward]], requires_grad=False)
                                 if done and not include_post_terminal_transitions:
                                     next_state_trace = None
-                                print(Transition(state=state_vector, action=action_vector, reward=reward,
-                                                 next_state=next_state_trace, done=done))
-                                yield Transition(state=state_vector, action=action_vector, reward=reward,
-                                                 next_state=next_state_trace, done=done)
+                                transition = Transition(state=state_vector, action=action_vector, reward=reward,
+                                                        next_state=next_state_trace, done=done)
+                                print(transition)
+                                yield transition
                                 break
                         else:
                             print('')
