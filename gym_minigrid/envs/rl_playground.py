@@ -1,3 +1,4 @@
+import abc
 from collections import namedtuple
 
 import torch
@@ -119,40 +120,6 @@ class SafeExplorationEnv(MiniGridEnv):
         dir = state_vector[2].item() + 1
         return pos, dir
 
-    def step(self, action):
-
-        # Get the contents of the cell in front of the agent
-        fwd_pos = self.front_pos
-        fwd_cell = self.grid.get(*fwd_pos)
-        obs, reward, done, info = super().step(action)
-        reward = 0
-        step_cost = 1
-        if done:
-            info['reason'] = f'Max Steps at {self.agent_pos}'
-
-        if fwd_cell is not None and action == self.actions.forward:
-            if fwd_cell.type == 'lava':
-                # reward = -100 - 2.1*(self.max_steps - self.step_count)
-                reward = -self.max_steps * STEP_COST
-                if not self.pause_stats:
-                    self.statistics['lava_count'] += 1
-                info['reason'] = f'Lava at {self.agent_pos}'
-            elif fwd_cell.type == 'goal':
-                reward = STEP_COST * self.max_steps * 1.5
-                info['reason'] = f'Goal at {self.agent_pos}'
-            elif fwd_cell.type == 'wall':
-                reward = -step_cost
-
-        if not self.pause_stats:
-            self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
-
-        info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
-        return info['state_vector'], MULTIPLIER * reward, done, info
-
-    def reset(self):
-        self.pause_stats = False
-        return super().reset(), dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
-
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
                                      n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA,
                                      include_post_terminal_transitions=False):
@@ -219,3 +186,49 @@ class SafeExplorationEnv(MiniGridEnv):
                             print('lava state + action')
                             print(state_vector)
                             print(action)
+
+
+class StepEnv(metaclass=abc.ABCMeta):
+    @abc.abstractmethod
+    def step(self, action):
+        pass
+
+    @abc.abstractmethod
+    def reset(self):
+        pass
+
+
+class DiscreteSafeExplorationEnv(SafeExplorationEnv, StepEnv):
+    def step(self, action):
+
+        # Get the contents of the cell in front of the agent
+        fwd_pos = self.front_pos
+        fwd_cell = self.grid.get(*fwd_pos)
+        obs, reward, done, info = super().step(action)
+        reward = 0
+        step_cost = 1
+        if done:
+            info['reason'] = f'Max Steps at {self.agent_pos}'
+
+        if fwd_cell is not None and action == self.actions.forward:
+            if fwd_cell.type == 'lava':
+                # reward = -100 - 2.1*(self.max_steps - self.step_count)
+                reward = -self.max_steps * STEP_COST
+                if not self.pause_stats:
+                    self.statistics['lava_count'] += 1
+                info['reason'] = f'Lava at {self.agent_pos}'
+            elif fwd_cell.type == 'goal':
+                reward = STEP_COST * self.max_steps * 1.5
+                info['reason'] = f'Goal at {self.agent_pos}'
+            elif fwd_cell.type == 'wall':
+                reward = -step_cost
+
+        if not self.pause_stats:
+            self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
+
+        info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
+        return info['state_vector'], MULTIPLIER * reward, done, info
+
+    def reset(self):
+        self.pause_stats = False
+        return super().reset(), dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
