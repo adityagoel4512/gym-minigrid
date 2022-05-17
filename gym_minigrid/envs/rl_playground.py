@@ -127,14 +127,19 @@ class SafeExplorationEnv(MiniGridEnv):
         obs, reward, done, info = super().step(action)
         reward = 0
         step_cost = 1
+        if done:
+            info['reason'] = f'Max Steps at {self.agent_pos}'
+
         if fwd_cell is not None and action == self.actions.forward:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
                 reward = -self.max_steps * STEP_COST
                 if not self.pause_stats:
                     self.statistics['lava_count'] += 1
+                info['reason'] = f'Lava at {self.agent_pos}'
             elif fwd_cell.type == 'goal':
                 reward = STEP_COST * self.max_steps * 1.5
+                info['reason'] = f'Goal at {self.agent_pos}'
             elif fwd_cell.type == 'wall':
                 reward = -step_cost
 
