@@ -24,7 +24,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.initial_state = initial_state
         self.statistics = dict(lava_count=0)
         self.offline_regions = offline_regions
-        self.statistics_arr = dict(lava_count=[])
+        self.statistics_arr = dict(lava_count=[], terminalstates=[])
         self.pause_stats = False
         lava_setups = {
             'corner': self.corner_lava,
@@ -102,7 +102,7 @@ class SafeExplorationEnv(MiniGridEnv):
         option_x = width // 3
 
         # Place the agent in the top-left corner
-        self.agent_pos = np.array(state or (option_x, self.initial_state[1]), dtype=np.float)
+        self.agent_pos = np.array(state or (option_x, self.initial_state[1]), dtype=float)
         self.agent_dir = dir if dir is not None else np.random.randint(0, high=4)
         self.step_count = 0
 
@@ -293,7 +293,7 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         if action.ndim == 2 and action.shape[0] == 1:
             action = action.flatten()
         self.step_count += 1
-        print(f'Before Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
+        # print(f'Before Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
 
         # action is 2d np array flattened
         self.rotate_agent(action[0])
@@ -307,11 +307,11 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
             self.agent_pos[1] += dy
             self.forward_candidate_step = None
             # successfully advance forward
-            print(f'successfully advanced: {dx, dy}')
+            # print(f'successfully advanced: {dx, dy}')
         else:
-            print(f'did not advance')
+            # print(f'did not advance')
             assert fwd_cell.type == 'wall', 'Non wall failure to move'
-        print(f'After Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
+        # print(f'After Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
 
         reward = 0
         done = self.step_count >= self.max_steps
@@ -333,8 +333,10 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
 
         if not self.pause_stats:
             self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
+            if done:
+                self.statistics_arr['terminalstates'].append(copy.deepcopy(self.agent_pos))
 
-        info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
+        info = dict(state_vector=np.expand_dims(self.construct_state_vector(self.agent_pos, self.agent_dir), axis=0), **info)
         return info['state_vector'], MULTIPLIER * reward, done, info
 
     def reset(self):
