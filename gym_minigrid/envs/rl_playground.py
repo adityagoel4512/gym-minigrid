@@ -289,6 +289,9 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         return front_pos
 
     def step(self, action):
+
+        if action.ndim == 2 and action.shape[0] == 1:
+            action = action.flatten()
         self.step_count += 1
         print(f'Before Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
 
