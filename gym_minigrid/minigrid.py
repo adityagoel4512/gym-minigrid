@@ -395,6 +395,12 @@ class Grid:
         self.grid[j * self.width + i] = v
 
     def get(self, i, j):
+        if not isinstance(i, int):
+            print(f'i: {i} => {int(i)}')
+            i = int(i)
+        if not isinstance(j, int):
+            print(f'j: {j} => {int(i)}')
+            j = int(j)
         assert i >= 0 and i < self.width
         assert j >= 0 and j < self.height
         return self.grid[j * self.width + i]
@@ -460,7 +466,8 @@ class Grid:
         agent_dir=None,
         highlight=False,
         tile_size=TILE_PIXELS,
-        subdivs=3
+        subdivs=3,
+        continuous_mode=False
     ):
         """
         Render a tile and cache the result
@@ -491,7 +498,7 @@ class Grid:
             )
 
             # Rotate the agent based on its direction
-            tri_fn = rotate_fn(tri_fn, cx=0.5, cy=0.5, theta=0.5*math.pi*agent_dir)
+            tri_fn = rotate_fn(tri_fn, cx=0.5, cy=0.5, theta=0.5*math.pi*agent_dir if not continuous_mode else agent_dir)
             fill_coords(img, tri_fn, (255, 0, 0))
 
         # Highlight the cell if needed
@@ -511,7 +518,8 @@ class Grid:
         tile_size,
         agent_pos=None,
         agent_dir=None,
-        highlight_mask=None
+        highlight_mask=None,
+        continuous_mode=False
     ):
         """
         Render this grid at a given scale
@@ -533,12 +541,13 @@ class Grid:
             for i in range(0, self.width):
                 cell = self.get(i, j)
 
-                agent_here = np.array_equal(agent_pos, (i, j))
+                agent_here = np.array_equal(agent_pos.astype(np.int), (i, j))
                 tile_img = Grid.render_tile(
                     cell,
                     agent_dir=agent_dir if agent_here else None,
                     highlight=highlight_mask[i, j],
-                    tile_size=tile_size
+                    tile_size=tile_size,
+                    continuous_mode=continuous_mode
                 )
 
                 ymin = j * tile_size
@@ -1254,7 +1263,7 @@ class MiniGridEnv(gym.Env):
 
         return img
 
-    def render(self, mode='human', close=False, highlight=True, tile_size=TILE_PIXELS):
+    def render(self, mode='human', close=False, highlight=True, tile_size=TILE_PIXELS, continuous_mode=False):
         """
         Render the whole-grid human view
         """
@@ -1270,41 +1279,42 @@ class MiniGridEnv(gym.Env):
             self.window.show(block=False)
 
         # Compute which cells are visible to the agent
-        _, vis_mask = self.gen_obs_grid()
+        # _, vis_mask = self.gen_obs_grid()
 
         # Compute the world coordinates of the bottom-left corner
         # of the agent's view area
-        f_vec = self.dir_vec
-        r_vec = self.right_vec
-        top_left = self.agent_pos + f_vec * (self.agent_view_size-1) - r_vec * (self.agent_view_size // 2)
+        # f_vec = self.dir_vec
+        # r_vec = self.right_vec
+        # top_left = self.agent_pos + f_vec * (self.agent_view_size-1) - r_vec * (self.agent_view_size // 2)
 
-        # Mask of which cells to highlight
-        highlight_mask = np.zeros(shape=(self.width, self.height), dtype=bool)
-
-        # For each cell in the visibility mask
-        for vis_j in range(0, self.agent_view_size):
-            for vis_i in range(0, self.agent_view_size):
-                # If this cell is not visible, don't highlight it
-                if not vis_mask[vis_i, vis_j]:
-                    continue
-
-                # Compute the world coordinates of this cell
-                abs_i, abs_j = top_left - (f_vec * vis_j) + (r_vec * vis_i)
-
-                if abs_i < 0 or abs_i >= self.width:
-                    continue
-                if abs_j < 0 or abs_j >= self.height:
-                    continue
-
-                # Mark this cell to be highlighted
-                highlight_mask[abs_i, abs_j] = True
+        # # Mask of which cells to highlight
+        # highlight_mask = np.zeros(shape=(self.width, self.height), dtype=bool)
+        #
+        # # For each cell in the visibility mask
+        # for vis_j in range(0, self.agent_view_size):
+        #     for vis_i in range(0, self.agent_view_size):
+        #         # If this cell is not visible, don't highlight it
+        #         if not vis_mask[vis_i, vis_j]:
+        #             continue
+        #
+        #         # Compute the world coordinates of this cell
+        #         abs_i, abs_j = top_left - (f_vec * vis_j) + (r_vec * vis_i)
+        #
+        #         if abs_i < 0 or abs_i >= self.width:
+        #             continue
+        #         if abs_j < 0 or abs_j >= self.height:
+        #             continue
+        #
+        #         # Mark this cell to be highlighted
+        #         highlight_mask[abs_i, abs_j] = True
 
         # Render the whole grid
         img = self.grid.render(
             tile_size,
             self.agent_pos,
             self.agent_dir,
-            highlight_mask=highlight_mask if highlight else None
+            highlight_mask=None,
+            continuous_mode=continuous_mode
         )
 
         if mode == 'human':

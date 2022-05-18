@@ -1,9 +1,15 @@
-import abc
+import copy
+from abc import abstractmethod
 from collections import namedtuple
+from enum import IntEnum
 
+import gym
+import numpy as np
 import torch
 from const import *
 from gym_minigrid.minigrid import *
+
+from minigrid.gym_minigrid.minigrid import MiniGridEnv
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
 
@@ -96,7 +102,7 @@ class SafeExplorationEnv(MiniGridEnv):
         option_x = width // 3
 
         # Place the agent in the top-left corner
-        self.agent_pos = np.array(state or (option_x, self.initial_state[1]))
+        self.agent_pos = np.array(state or (option_x, self.initial_state[1]), dtype=np.float)
         self.agent_dir = dir if dir is not None else np.random.randint(0, high=4)
         self.step_count = 0
 
@@ -146,7 +152,7 @@ class SafeExplorationEnv(MiniGridEnv):
                 continue
             print(col, row, cell)
             for dir in range(4):
-                for action_sequence in replicate((self.actions.forward, self.actions.left, self.actions.right), n_step,
+                for action_sequence in replicate(self.actions, n_step,
                                                  []):
                     print(action_sequence)
                     self._gen_grid(self.width, self.height, (col, row), dir)
@@ -188,17 +194,20 @@ class SafeExplorationEnv(MiniGridEnv):
                             print(action)
 
 
-class StepEnv(metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def step(self, action):
-        pass
-
-    @abc.abstractmethod
-    def reset(self):
-        pass
+class DiscreteActions(IntEnum):
+    # Turn left, turn right, move forward
+    left = 0
+    right = 1
+    forward = 2
 
 
-class DiscreteSafeExplorationEnv(SafeExplorationEnv, StepEnv):
+class DiscreteSafeExplorationEnv(SafeExplorationEnv):
+
+    def __init__(self, **kwargs):
+        super(DiscreteSafeExplorationEnv, self).__init__(**kwargs)
+        self.actions = DiscreteActions
+        self.action_space = gym.spaces.Discrete(len(self.actions))
+
     def step(self, action):
 
         # Get the contents of the cell in front of the agent
@@ -206,7 +215,6 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv, StepEnv):
         fwd_cell = self.grid.get(*fwd_pos)
         obs, reward, done, info = super().step(action)
         reward = 0
-        step_cost = 1
         if done:
             info['reason'] = f'Max Steps at {self.agent_pos}'
 
@@ -221,7 +229,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv, StepEnv):
                 reward = STEP_COST * self.max_steps * 1.5
                 info['reason'] = f'Goal at {self.agent_pos}'
             elif fwd_cell.type == 'wall':
-                reward = -step_cost
+                reward = -1
 
         if not self.pause_stats:
             self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
@@ -232,3 +240,103 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv, StepEnv):
     def reset(self):
         self.pause_stats = False
         return super().reset(), dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
+
+
+class ContinuousSafeExplorationEnv(SafeExplorationEnv):
+    def __init__(self, **kwargs):
+        super(ContinuousSafeExplorationEnv, self).__init__(**kwargs)
+
+        # action_space is a 2d action space
+        # the first continuous value represents the orientation turned (bounded in range -pi to pi)
+        # positive rotation = rotating right
+        # negative rotation = rotating left
+        # when orientation is 0, this corresponds to facing east
+        # the second continuous value represents the distance travelled (clipped to 1 in step)
+
+        self.forward_candidate_step = None
+        low = np.array([-np.pi, 0])
+        high = np.array([np.pi, 1])
+        self.action_space = gym.spaces.Box(low=low, high=high)
+
+        def slice_action_space():
+            for rotation in np.linspace(low[0], high[0], num=4):
+                for movement_forward in np.linspace(low[1], high[1], num=4):
+                    print([rotation, movement_forward])
+                    yield np.array([rotation, movement_forward])
+
+        self.actions = slice_action_space()
+        self.agent_dir = 0
+
+    def rotate_agent(self, rotation):
+        self.agent_dir = self.agent_dir + rotation
+        while self.agent_dir < -np.pi:
+            self.agent_dir += 2 * np.pi
+
+        while self.agent_dir > np.pi:
+            self.agent_dir -= 2 * np.pi
+
+    def forward_movement_pos_change(self, distance):
+        # assume distance in [0, 1]
+        dx = distance * np.cos(self.agent_dir)
+        dy = distance * np.sin(self.agent_dir)
+        return dx, dy
+
+    @property
+    def front_pos(self):
+        # front_pos in continuous scenario means the integer grid in front after moving forward 1 step
+        dx, dy = self.forward_movement_pos_change(self.forward_candidate_step)
+        front_pos = np.array((int(self.agent_pos[0] + dx), int(self.agent_pos[1] + dy)))
+        return front_pos
+
+    def step(self, action):
+        self.step_count += 1
+        print(f'Before Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
+
+        # action is 2d np array flattened
+        self.rotate_agent(action[0])
+        self.forward_candidate_step = np.clip(action[1], 0, 1)
+
+        fwd_pos = self.front_pos
+        fwd_cell = self.grid.get(*fwd_pos)
+        if fwd_cell is None or fwd_cell.can_overlap():
+            dx, dy = self.forward_movement_pos_change(self.forward_candidate_step)
+            self.agent_pos[0] += dx
+            self.agent_pos[1] += dy
+            self.forward_candidate_step = None
+            # successfully advance forward
+            print(f'successfully advanced: {dx, dy}')
+        else:
+            print(f'did not advance')
+            assert fwd_cell.type == 'wall', 'Non wall failure to move'
+        print(f'After Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
+
+        reward = 0
+        done = self.step_count >= self.max_steps
+        info = dict()
+        if fwd_cell is not None:
+            if fwd_cell.type == 'lava':
+                # reward = -100 - 2.1*(self.max_steps - self.step_count)
+                reward = -self.max_steps * STEP_COST
+                done = True
+                if not self.pause_stats:
+                    self.statistics['lava_count'] += 1
+                info['reason'] = f'Lava at {self.agent_pos}'
+            elif fwd_cell.type == 'goal':
+                reward = STEP_COST * self.max_steps * 1.5
+                info['reason'] = f'Goal at {self.agent_pos}'
+                done = True
+            elif fwd_cell.type == 'wall':
+                reward = -1
+
+        if not self.pause_stats:
+            self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
+
+        info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
+        return info['state_vector'], MULTIPLIER * reward, done, info
+
+    def reset(self):
+        self.pause_stats = False
+        self.forward_candidate_step = None
+        reset = super().reset()
+        self.agent_dir = 0
+        return reset, dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
