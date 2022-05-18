@@ -396,10 +396,10 @@ class Grid:
 
     def get(self, i, j):
         if not isinstance(i, int):
-            print(f'i: {i} => {int(i)}')
+            # print(f'i: {i} => {int(i)}')
             i = int(i)
         if not isinstance(j, int):
-            print(f'j: {j} => {int(i)}')
+            # print(f'j: {j} => {int(i)}')
             j = int(j)
         assert i >= 0 and i < self.width
         assert j >= 0 and j < self.height
