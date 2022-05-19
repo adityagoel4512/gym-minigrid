@@ -1,5 +1,4 @@
 import copy
-from abc import abstractmethod
 from collections import namedtuple
 from enum import IntEnum
 
@@ -24,7 +23,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.initial_state = initial_state
         self.statistics = dict(lava_count=0)
         self.offline_regions = offline_regions
-        self.statistics_arr = dict(lava_count=[], terminalstates=[])
+        self.statistics_arr = dict(lava_count=[], terminalstates=[], goal=[0])
         self.pause_stats = False
         lava_setups = {
             'corner': self.corner_lava,
@@ -228,6 +227,8 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
             elif fwd_cell.type == 'goal':
                 reward = STEP_COST * self.max_steps * 1.5
                 info['reason'] = f'Goal at {self.agent_pos}'
+                if not self.pause_stats:
+                    self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1] + 1)
             elif fwd_cell.type == 'wall':
                 reward = -1
 
@@ -316,6 +317,9 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         reward = 0
         done = self.step_count >= self.max_steps
         info = dict()
+        self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1])
+        self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
+
         if fwd_cell is not None:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
@@ -323,20 +327,22 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
                 done = True
                 if not self.pause_stats:
                     self.statistics['lava_count'] += 1
+                    self.statistics_arr['lava_count'][-1] += 1
                 info['reason'] = f'Lava at {self.agent_pos}'
             elif fwd_cell.type == 'goal':
-                reward = STEP_COST * self.max_steps * 1.5
+                reward = STEP_COST * self.max_steps * 2
                 info['reason'] = f'Goal at {self.agent_pos}'
                 done = True
+                self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
                 reward = -1
 
         if not self.pause_stats:
-            self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
             if done:
                 self.statistics_arr['terminalstates'].append(copy.deepcopy(self.agent_pos))
 
-        info = dict(state_vector=np.expand_dims(self.construct_state_vector(self.agent_pos, self.agent_dir), axis=0), **info)
+        info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir),
+                    **info)
         return info['state_vector'], MULTIPLIER * reward, done, info
 
     def reset(self):
