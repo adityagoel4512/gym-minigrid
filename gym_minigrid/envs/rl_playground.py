@@ -103,6 +103,10 @@ class SafeExplorationEnv(MiniGridEnv):
         # Place the agent in the top-left corner
         self.agent_pos = np.array(state or (option_x, self.initial_state[1]), dtype=float)
         self.agent_dir = dir if dir is not None else np.random.randint(0, high=4)
+        if isinstance(self, ContinuousSafeExplorationEnv):
+            self.agent_dir = np.random.uniform(low=-np.pi, high=np.pi)
+            print(self.agent_dir)
+
         self.step_count = 0
 
         self.goal_state = np.array([3, height - 4])
@@ -244,7 +248,8 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
 
 
 class ContinuousSafeExplorationEnv(SafeExplorationEnv):
-    def __init__(self, **kwargs):
+    def __init__(self, degree_mode=False, **kwargs):
+        self.degree_mode = degree_mode
         super(ContinuousSafeExplorationEnv, self).__init__(**kwargs)
 
         # action_space is a 2d action space
@@ -255,8 +260,10 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         # the second continuous value represents the distance travelled (clipped to 1 in step)
 
         self.forward_candidate_step = None
-        low = np.array([-np.pi, 0])
-        high = np.array([np.pi, 1])
+        print(f'degree mode: {degree_mode}')
+
+        low = np.array([-180., 000.])
+        high = np.array([180., 1])
         self.action_space = gym.spaces.Box(low=low, high=high)
 
         def slice_action_space():
@@ -266,6 +273,8 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
                     yield np.array([rotation, movement_forward])
 
         self.actions = slice_action_space()
+
+        # always maintained in radians
         self.agent_dir = 0
 
     def rotate_agent(self, rotation):
@@ -289,17 +298,23 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         front_pos = np.array((int(self.agent_pos[0] + dx), int(self.agent_pos[1] + dy)))
         return front_pos
 
-    def step(self, action):
+    @staticmethod
+    def degree_to_rad(deg):
+        return deg * np.pi / 180
 
+    @staticmethod
+    def rad_to_degree(rad):
+        return rad * 180 / np.pi
+
+    def step(self, action):
         if action.ndim == 2 and action.shape[0] == 1:
             action = action.flatten()
         self.step_count += 1
         # print(f'Before Pos: {self.agent_pos}, Orientation: {self.agent_dir}')
-
+        rotation = ContinuousSafeExplorationEnv.degree_to_rad(action[0])
         # action is 2d np array flattened
-        self.rotate_agent(action[0])
+        self.rotate_agent(rotation)
         self.forward_candidate_step = np.clip(action[1], 0, 1)
-
         fwd_pos = self.front_pos
         fwd_cell = self.grid.get(*fwd_pos)
         if fwd_cell is None or fwd_cell.can_overlap():
@@ -319,7 +334,8 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         info = dict()
         self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1])
         self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
-
+        dist = np.sqrt(np.dot(self.goal_state - self.agent_pos, self.goal_state - self.agent_pos))
+        abs_diff = np.abs(self.goal_state - self.agent_pos).sum()
         if fwd_cell is not None:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
@@ -329,14 +345,17 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
                     self.statistics['lava_count'] += 1
                     self.statistics_arr['lava_count'][-1] += 1
                 info['reason'] = f'Lava at {self.agent_pos}'
-            elif fwd_cell.type == 'goal':
+            elif fwd_cell.type == 'goal' or dist < 0.1:
                 reward = STEP_COST * self.max_steps * 2
                 info['reason'] = f'Goal at {self.agent_pos}'
                 done = True
                 self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
                 reward = -1
-
+                if abs_diff < 3.6:
+                    reward += 3.6 - abs_diff
+        elif abs_diff < 3.6:
+            reward += 3.6 - abs_diff
         if not self.pause_stats:
             if done:
                 self.statistics_arr['terminalstates'].append(copy.deepcopy(self.agent_pos))
@@ -344,6 +363,19 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir),
                     **info)
         return info['state_vector'], MULTIPLIER * reward, done, info
+
+    def construct_state_vector(self, agent_pos, agent_dir):
+        # center units and concatentate
+        # agent_dir always in radians
+        agent_dir = ContinuousSafeExplorationEnv.rad_to_degree(agent_dir)
+        return np.array([agent_pos[0] - self.width // 2, agent_pos[1] - self.height // 2, agent_dir], dtype=float)
+
+    def deconstruct_state_vector(self, state_vector):
+        if state_vector.shape[0] == 1:
+            state_vector = state_vector.squeeze()
+        pos = np.array([state_vector[0] + float(self.width // 2), state_vector[1] + float(self.height // 2)], dtype=float)
+        dir = state_vector[2].item()
+        return pos, dir
 
     def reset(self):
         self.pause_stats = False

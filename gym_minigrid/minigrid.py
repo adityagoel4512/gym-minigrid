@@ -1081,6 +1081,7 @@ class MiniGridEnv(gym.Env):
             topX = self.agent_pos[0] - self.agent_view_size // 2
             topY = self.agent_pos[1] - self.agent_view_size + 1
         else:
+
             assert False, "invalid agent direction"
 
         botX = topX + self.agent_view_size
@@ -1227,10 +1228,10 @@ class MiniGridEnv(gym.Env):
         Generate the agent's view (partially observable, low-resolution encoding)
         """
 
-        grid, vis_mask = self.gen_obs_grid()
+        # grid, vis_mask = self.gen_obs_grid()
 
         # Encode the partially observable view into a numpy array
-        image = grid.encode(vis_mask)
+        # image = grid.encode(vis_mask)
 
         assert hasattr(self, 'mission'), "environments must define a textual mission string"
 
@@ -1239,7 +1240,7 @@ class MiniGridEnv(gym.Env):
         # - the agent's direction/orientation (acting as a compass)
         # - a textual mission string (instructions for the agent)
         obs = {
-            'image': image,
+            # 'image': image,
             'direction': self.agent_dir,
             'mission': self.mission
         }
