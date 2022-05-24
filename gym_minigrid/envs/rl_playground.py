@@ -21,9 +21,8 @@ class SafeExplorationEnv(MiniGridEnv):
     def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, offline_regions=False,
                  rand_choices=3):
         self.initial_state = initial_state
-        self.statistics = dict(lava_count=0)
         self.offline_regions = offline_regions
-        self.statistics_arr = dict(lava_count=[], terminalstates=[], goal=[0])
+        self.statistics_arr = dict(lava_count=[0], terminalstates=[], goal=[0])
         self.pause_stats = False
         lava_setups = {
             'corner': self.corner_lava,
@@ -106,6 +105,8 @@ class SafeExplorationEnv(MiniGridEnv):
         if isinstance(self, ContinuousSafeExplorationEnv):
             self.agent_dir = np.random.uniform(low=-np.pi, high=np.pi)
             print(self.agent_dir)
+        elif isinstance(self, DiscreteSafeExplorationEnv):
+            pass
 
         self.step_count = 0
 
@@ -117,6 +118,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.mission = (
             "reach the green goal square, dealing with obstacles and lava" if not self.offline_regions else "offline data regions"
         )
+        self.done = False
 
     def construct_state_vector(self, agent_pos, agent_dir):
         # center units and concatentate
@@ -183,10 +185,10 @@ class SafeExplorationEnv(MiniGridEnv):
                                     np.concatenate(self.construct_state_vector(self.agent_pos, self.agent_dir),
                                                    axis=None)).float().unsqueeze(0)
                                 reward = torch.tensor([[cumulative_reward]], requires_grad=False)
-                                if done and not include_post_terminal_transitions:
-                                    next_state_trace = None
+                                # if done and not include_post_terminal_transitions:
+                                #     next_state_trace = None
                                 transition = Transition(state=state_vector, action=action_vector, reward=reward,
-                                                        next_state=next_state_trace, done=done)
+                                                        next_state=next_state_trace, done=torch.tensor([[done]]))
                                 print(transition)
                                 yield transition
                                 break
@@ -210,9 +212,12 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         super(DiscreteSafeExplorationEnv, self).__init__(**kwargs)
         self.actions = DiscreteActions
         self.action_space = gym.spaces.Discrete(len(self.actions))
+        self.done = False
 
     def step(self, action):
-
+        if self.done:
+            # print('DiscreteSafeExplorationEnv is done but step invoked. Returning')
+            return
         # Get the contents of the cell in front of the agent
         fwd_pos = self.front_pos
         fwd_cell = self.grid.get(*fwd_pos)
@@ -220,30 +225,32 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         reward = 0
         if done:
             info['reason'] = f'Max Steps at {self.agent_pos}'
+            if not self.pause_stats:
+                self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1])
+                self.statistics_arr['lava_count'].append(self.statistics_arr['lava_count'][-1])
 
         if fwd_cell is not None and action == self.actions.forward:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
                 reward = -self.max_steps * STEP_COST
-                if not self.pause_stats:
-                    self.statistics['lava_count'] += 1
                 info['reason'] = f'Lava at {self.agent_pos}'
+                if not self.pause_stats:
+                    self.statistics_arr['lava_count'][-1] += 1
             elif fwd_cell.type == 'goal':
                 reward = STEP_COST * self.max_steps * 1.5
                 info['reason'] = f'Goal at {self.agent_pos}'
                 if not self.pause_stats:
-                    self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1] + 1)
+                    self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
                 reward = -1
 
-        if not self.pause_stats:
-            self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
-
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
+        self.done = done
         return info['state_vector'], MULTIPLIER * reward, done, info
 
     def reset(self):
         self.pause_stats = False
+        self.done = False
         return super().reset(), dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir))
 
 
@@ -333,7 +340,7 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         done = self.step_count >= self.max_steps
         info = dict()
         self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1])
-        self.statistics_arr['lava_count'].append(self.statistics['lava_count'])
+        self.statistics_arr['lava_count'].append(self.statistics_arr['lava_count'][-1])
         dist = np.sqrt(np.dot(self.goal_state - self.agent_pos, self.goal_state - self.agent_pos))
         abs_diff = np.abs(self.goal_state - self.agent_pos).sum()
         if fwd_cell is not None:
@@ -342,7 +349,6 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
                 reward = -self.max_steps * STEP_COST
                 done = True
                 if not self.pause_stats:
-                    self.statistics['lava_count'] += 1
                     self.statistics_arr['lava_count'][-1] += 1
                 info['reason'] = f'Lava at {self.agent_pos}'
             elif fwd_cell.type == 'goal' or dist < 0.1:
