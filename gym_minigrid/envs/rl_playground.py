@@ -125,6 +125,7 @@ class SafeExplorationEnv(MiniGridEnv):
         return np.array([agent_pos[0] - self.width // 2, agent_pos[1] - self.height // 2, agent_dir - 1])
 
     def deconstruct_state_vector(self, state_vector):
+        state_vector = state_vector.cpu()
         if state_vector.shape[0] == 1:
             state_vector = state_vector.squeeze()
         pos = np.array([state_vector[0] + (self.width // 2), state_vector[1] + (self.height // 2)], dtype=np.int16)
@@ -187,8 +188,8 @@ class SafeExplorationEnv(MiniGridEnv):
                                 reward = torch.tensor([[cumulative_reward]], requires_grad=False)
                                 # if done and not include_post_terminal_transitions:
                                 #     next_state_trace = None
-                                transition = Transition(state=state_vector, action=action_vector, reward=reward,
-                                                        next_state=next_state_trace, done=torch.tensor([[done]]))
+                                transition = Transition(state=state_vector.to(device), action=action_vector.to(device), reward=reward.to(device),
+                                                        next_state=next_state_trace.to(device), done=torch.tensor([[done]]).to(device))
                                 print(transition)
                                 yield transition
                                 break
