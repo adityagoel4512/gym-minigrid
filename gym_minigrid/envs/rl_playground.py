@@ -246,7 +246,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                 reward = -1
 
         if not SPARSE_REWARD:
-            reward += float((self.width/4 + self.height/4) - np.abs(self.agent_pos - self.goal_state).sum())
+            reward += float((15. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * STEP_COST * self.max_steps * 1.5) * 0.01
 
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
         self.done = done
