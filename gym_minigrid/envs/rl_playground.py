@@ -133,8 +133,7 @@ class SafeExplorationEnv(MiniGridEnv):
         return pos, dir
 
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
-                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA,
-                                     include_post_terminal_transitions=False):
+                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA):
         self.pause_statistics()
 
         def neighbour_state_lava(col, row):
@@ -214,6 +213,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         self.actions = DiscreteActions
         self.action_space = gym.spaces.Discrete(len(self.actions))
         self.done = False
+        print(f'sparse reward: {SPARSE_REWARD}')
 
     def step(self, action):
         if self.done:
@@ -244,6 +244,9 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                     self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
                 reward = -1
+
+        if not SPARSE_REWARD:
+            reward += float((self.width/4 + self.height/4) - np.abs(self.agent_pos - self.goal_state).sum())
 
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
         self.done = done
