@@ -11,7 +11,7 @@ from gym_minigrid.minigrid import *
 from minigrid.gym_minigrid.minigrid import MiniGridEnv
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
-
+device = torch.device('cpu')
 
 class SafeExplorationEnv(MiniGridEnv):
     """
