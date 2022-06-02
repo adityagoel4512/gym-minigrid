@@ -1,6 +1,7 @@
 import copy
 from collections import namedtuple
 from enum import IntEnum
+import os
 
 import gym
 import numpy as np
@@ -11,7 +12,6 @@ from gym_minigrid.minigrid import *
 from minigrid.gym_minigrid.minigrid import MiniGridEnv
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
-device = torch.device('cpu')
 
 class SafeExplorationEnv(MiniGridEnv):
     """
@@ -19,7 +19,7 @@ class SafeExplorationEnv(MiniGridEnv):
     """
 
     def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, offline_regions=False,
-                 rand_choices=3):
+                 rand_choices=3, device=torch.device('cuda')):
         self.initial_state = initial_state
         self.offline_regions = offline_regions
         self.statistics_arr = dict(lava_count=[0], terminalstates=[], goal=[0])
@@ -29,7 +29,7 @@ class SafeExplorationEnv(MiniGridEnv):
             'wall': self.wall_lava,
             'none': lambda width, height, y_wall, end_x_wall: ()
         }
-
+        self.device = device
         self.lava_setup = lava_setups[lava_setup]
         self.rand_choices = rand_choices
 
@@ -134,6 +134,29 @@ class SafeExplorationEnv(MiniGridEnv):
 
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
                                      n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA):
+
+        arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA))
+        cache_path = f'{OUTPUT_LOCATION}/datasetcache/{arg_string}.pkl'
+        if os.path.exists(cache_path) and os.path.isfile(cache_path):
+            print(f'loading from cache: {cache_path}')
+            dataset = torch.load(cache_path)
+            
+            for transition in dataset:
+                transition.state.to(self.device)
+                transition.action.to(self.device)
+                transition.next_state.to(self.device)
+                transition.reward.to(self.device)
+                transition.done.to(self.device)
+                yield transition
+        else:
+            dataset = list(self.__transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA))
+            torch.save(dataset, cache_path)
+            yield from self.transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA)
+
+
+    def __transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
+                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA):
+        
         self.pause_statistics()
 
         def neighbour_state_lava(col, row):
@@ -187,8 +210,8 @@ class SafeExplorationEnv(MiniGridEnv):
                                 reward = torch.tensor([[cumulative_reward]], requires_grad=False)
                                 # if done and not include_post_terminal_transitions:
                                 #     next_state_trace = None
-                                transition = Transition(state=state_vector.to(device), action=action_vector.to(device), reward=reward.to(device),
-                                                        next_state=next_state_trace.to(device), done=torch.tensor([[done]]).to(device))
+                                transition = Transition(state=state_vector.to(self.device), action=action_vector.to(self.device), reward=reward.to(self.device),
+                                                        next_state=next_state_trace.to(self.device), done=torch.tensor([[done]]).to(self.device))
                                 print(transition)
                                 yield transition
                                 break
