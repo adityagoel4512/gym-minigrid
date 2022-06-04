@@ -1,6 +1,6 @@
 import copy
 from collections import namedtuple
-from enum import IntEnum
+from enum import IntEnum, Enum
 import os
 
 import gym
@@ -12,6 +12,11 @@ from gym_minigrid.minigrid import *
 from minigrid.gym_minigrid.minigrid import MiniGridEnv
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
+
+class TerminationCondition(Enum):
+    LAVA = 'LAVA'
+    GOAL = 'GOAL'
+    MAX_STEPS = 'MAX_STEPS'
 
 class SafeExplorationEnv(MiniGridEnv):
     """
@@ -243,7 +248,6 @@ class DiscreteActions(IntEnum):
     right = 1
     forward = 2
 
-
 class DiscreteSafeExplorationEnv(SafeExplorationEnv):
 
     def __init__(self, **kwargs):
@@ -264,6 +268,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         reward = 0
         if done:
             info['reason'] = f'Max Steps at {self.agent_pos}'
+            info['termination'] = TerminationCondition.MAX_STEPS
             if not self.pause_stats:
                 self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1])
                 self.statistics_arr['lava_count'].append(self.statistics_arr['lava_count'][-1])
@@ -273,11 +278,13 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
                 reward = -self.max_steps * STEP_COST
                 info['reason'] = f'Lava at {self.agent_pos}'
+                info['termination'] = TerminationCondition.LAVA
                 if not self.pause_stats:
                     self.statistics_arr['lava_count'][-1] += 1
             elif fwd_cell.type == 'goal':
                 reward = STEP_COST * self.max_steps * 1.5
                 info['reason'] = f'Goal at {self.agent_pos}'
+                info['termination'] = TerminationCondition.GOAL
                 if not self.pause_stats:
                     self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
