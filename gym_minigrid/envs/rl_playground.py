@@ -133,14 +133,13 @@ class SafeExplorationEnv(MiniGridEnv):
         return pos, dir
 
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
-                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA):
+                                     n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA, deduplicate=True):
 
-        arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA))
+        arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate))
         cache_path = f'{OUTPUT_LOCATION}/datasetcache/{arg_string}.pkl'
         if os.path.exists(cache_path) and os.path.isfile(cache_path):
             print(f'loading from cache: {cache_path}')
             dataset = torch.load(cache_path)
-            
             for transition in dataset:
                 transition.state.to(self.device)
                 transition.action.to(self.device)
@@ -150,7 +149,21 @@ class SafeExplorationEnv(MiniGridEnv):
                 yield transition
         else:
             dataset = list(self.__transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA))
-            torch.save(dataset, cache_path)
+            if deduplicate:
+                nonduplicates = []
+
+                def find(t):
+                    for tr in nonduplicates:
+                        if torch.equal(tr.state, t.state) and torch.equal(tr.action, t.action) and torch.equal(tr.next_state, t.next_state) and torch.equal(tr.done, t.done):
+                            return True
+                    return False
+
+                for transition in dataset:
+                    if not find(transition):
+                        nonduplicates.append(transition)
+                torch.save(nonduplicates, cache_path)
+            else:
+                torch.save(dataset, cache_path)
             yield from self.transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA)
 
 
@@ -210,6 +223,8 @@ class SafeExplorationEnv(MiniGridEnv):
                                 reward = torch.tensor([[cumulative_reward]], requires_grad=False)
                                 # if done and not include_post_terminal_transitions:
                                 #     next_state_trace = None
+                                if i == (len(action_sequence)-1) and n_step > 1:
+                                    done = False
                                 transition = Transition(state=state_vector.to(self.device), action=action_vector.to(self.device), reward=reward.to(self.device),
                                                         next_state=next_state_trace.to(self.device), done=torch.tensor([[done]]).to(self.device))
                                 print(transition)
