@@ -145,16 +145,20 @@ class SafeExplorationEnv(MiniGridEnv):
         if os.path.exists(cache_path) and os.path.isfile(cache_path):
             print(f'loading from cache: {cache_path}')
             dataset = torch.load(cache_path)
-            for transition in dataset:
-                transition.state.to(self.device)
-                transition.action.to(self.device)
-                transition.next_state.to(self.device)
-                transition.reward.to(self.device)
-                transition.done.to(self.device)
-                yield transition
+            shift_transitions = dataset[0].state.device != self.device
+            if not shift_transitions:
+                for transition in dataset:
+                    yield transition
+            else:
+                print(f'shifting data into: {self.device}')
+                for transition in dataset:
+                    t = Transition(state=transition.state.to(self.device), action=transition.action.to(self.device), next_state=transition.next_state.to(self.device), reward=transition.reward.to(self.device), done=transition.done.to(self.device))
+                    yield t
         else:
             dataset = list(self.__transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA))
+            print(f'cache write path: {cache_path}')
             if deduplicate:
+                print(f'deduplicating ...')
                 nonduplicates = []
 
                 def find(t):
