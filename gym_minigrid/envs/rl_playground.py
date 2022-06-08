@@ -142,6 +142,7 @@ class SafeExplorationEnv(MiniGridEnv):
 
         arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate))
         cache_path = f'{OUTPUT_LOCATION}/datasetcache/{arg_string}.pkl'
+        print(f'deduplicate: {deduplicate}')
         if os.path.exists(cache_path) and os.path.isfile(cache_path):
             print(f'loading from cache: {cache_path}')
             dataset = torch.load(cache_path)
@@ -286,7 +287,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                 if not self.pause_stats:
                     self.statistics_arr['lava_count'][-1] += 1
             elif fwd_cell.type == 'goal':
-                reward = STEP_COST * self.max_steps * 1.5
+                reward = STEP_COST * self.max_steps * 1.6
                 info['reason'] = f'Goal at {self.agent_pos}'
                 info['termination'] = TerminationCondition.GOAL
                 if not self.pause_stats:
