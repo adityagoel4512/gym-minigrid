@@ -121,7 +121,7 @@ class SafeExplorationEnv(MiniGridEnv):
         if self.offline_regions:
             self.setup_offline_regions()
         self.mission = (
-            "reach the green goal square, dealing with obstacles and lava" if not self.offline_regions else "offline data regions"
+            "Reach the green goal square, dealing with obstacles and lava" if not self.offline_regions else "offline data regions"
         )
         self.done = False
 
