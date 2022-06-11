@@ -24,7 +24,7 @@ class SafeExplorationEnv(MiniGridEnv):
     """
 
     def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, offline_regions=False,
-                 rand_choices=3, device=torch.device('cuda')):
+                 rand_choices=3, device=torch.device('cuda'), sparse_reward=True):
         self.initial_state = initial_state
         self.offline_regions = offline_regions
         self.statistics_arr = dict(lava_count=[0], terminalstates=[], goal=[0])
@@ -37,7 +37,7 @@ class SafeExplorationEnv(MiniGridEnv):
         self.device = device
         self.lava_setup = lava_setups[lava_setup]
         self.rand_choices = rand_choices
-
+        self.sparse_reward = sparse_reward
         super().__init__(
             grid_size=size,
             max_steps=max_steps,
@@ -281,13 +281,13 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         if fwd_cell is not None and action == self.actions.forward:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
-                reward = -self.max_steps * STEP_COST
+                reward = -self.max_steps * STEP_COST 
                 info['reason'] = f'Lava at {self.agent_pos}'
                 info['termination'] = TerminationCondition.LAVA
                 if not self.pause_stats:
                     self.statistics_arr['lava_count'][-1] += 1
             elif fwd_cell.type == 'goal':
-                reward = STEP_COST * self.max_steps * 1.6
+                reward = STEP_COST * self.max_steps * 2
                 info['reason'] = f'Goal at {self.agent_pos}'
                 info['termination'] = TerminationCondition.GOAL
                 if not self.pause_stats:
@@ -295,7 +295,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
             elif fwd_cell.type == 'wall':
                 reward = -1
 
-        if not SPARSE_REWARD:
+        if not self.sparse_reward:
             reward += float((15. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * STEP_COST * self.max_steps * 1.5) * 0.01
 
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
