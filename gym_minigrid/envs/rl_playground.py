@@ -1,5 +1,5 @@
 import copy
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from enum import IntEnum, Enum
 import os
 
@@ -24,11 +24,12 @@ class SafeExplorationEnv(MiniGridEnv):
     """
 
     def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, offline_regions=False,
-                 rand_choices=3, device=torch.device('cuda'), sparse_reward=True):
+                 rand_choices=3, device=torch.device('cuda'), sparse_reward=True, ENV_CACHING = True):
         self.initial_state = initial_state
         self.offline_regions = offline_regions
         self.statistics_arr = dict(lava_count=[0], terminalstates=[], goal=[0])
         self.pause_stats = False
+        self.ENV_CACHING = ENV_CACHING
         lava_setups = {
             'corner': self.corner_lava,
             'wall': self.wall_lava,
@@ -143,16 +144,26 @@ class SafeExplorationEnv(MiniGridEnv):
         arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate))
         cache_path = f'{OUTPUT_LOCATION}/datasetcache/{arg_string}.pkl'
         print(f'deduplicate: {deduplicate}')
-        if os.path.exists(cache_path) and os.path.isfile(cache_path):
+        if os.path.exists(cache_path) and os.path.isfile(cache_path) and self.ENV_CACHING:
             print(f'loading from cache: {cache_path}')
             dataset = torch.load(cache_path)
             shift_transitions = dataset[0].state.device != self.device
             if not shift_transitions:
                 for transition in dataset:
+                    if transition.done:
+                        if transition.reward > 0:
+                            print(f'goal: {transition}')
+                        else:
+                            print(f'lava: {transition}')
                     yield transition
             else:
                 print(f'shifting data into: {self.device}')
                 for transition in dataset:
+                    if transition.done:
+                        if transition.reward > 0:
+                            print(f'goal: {transition}')
+                        else:
+                            print(f'lava: {transition}')
                     t = Transition(state=transition.state.to(self.device), action=transition.action.to(self.device), next_state=transition.next_state.to(self.device), reward=transition.reward.to(self.device), done=transition.done.to(self.device))
                     yield t
         else:
@@ -161,20 +172,32 @@ class SafeExplorationEnv(MiniGridEnv):
             if deduplicate:
                 print(f'deduplicating ...')
                 nonduplicates = []
-
+                nonduplicate_dict = defaultdict(list)
                 def find(t):
-                    for tr in nonduplicates:
-                        if torch.equal(tr.state, t.state) and torch.equal(tr.action, t.action) and torch.equal(tr.next_state, t.next_state) and torch.equal(tr.done, t.done):
+                    for tr in nonduplicate_dict[(round(t.state.flatten()[0].item()), round(t.state.flatten()[1].item()))]:
+                        if equal_transition(t, tr, False):
                             return True
                     return False
-
                 for transition in dataset:
                     if not find(transition):
+                        nonduplicate_dict[(round(transition.state.flatten()[0].item()), round(transition.state.flatten()[1].item()))].append(transition)
                         nonduplicates.append(transition)
-                torch.save(nonduplicates, cache_path)
-            else:
+                    else:
+                        print(f'{transition} is duplicate')
+                if self.ENV_CACHING:
+                    print(f'before length: {len(dataset)}, after: {len(nonduplicates)}')
+                    torch.save(nonduplicates, cache_path)
+                    yield from self.transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA)
+                else:
+                    for transition in nonduplicates:
+                        yield transition
+            elif self.ENV_CACHING:
                 torch.save(dataset, cache_path)
-            yield from self.transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA)
+                yield from self.transitions_for_offline_data(extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA)
+            else:
+                for transition in dataset:
+                    yield transition
+
 
 
     def __transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
@@ -288,6 +311,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                     self.statistics_arr['lava_count'][-1] += 1
             elif fwd_cell.type == 'goal':
                 reward = STEP_COST * self.max_steps * 2
+                print(reward)
                 info['reason'] = f'Goal at {self.agent_pos}'
                 info['termination'] = TerminationCondition.GOAL
                 if not self.pause_stats:
