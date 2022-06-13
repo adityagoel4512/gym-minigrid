@@ -417,8 +417,9 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
         reward = 0
         done = self.step_count >= self.max_steps
         info = dict()
-        self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1])
-        self.statistics_arr['lava_count'].append(self.statistics_arr['lava_count'][-1])
+        if not self.pause_stats:
+            self.statistics_arr['goal'].append(self.statistics_arr['goal'][-1])
+            self.statistics_arr['lava_count'].append(self.statistics_arr['lava_count'][-1])
         dist = np.sqrt(np.dot(self.goal_state - self.agent_pos, self.goal_state - self.agent_pos))
         if fwd_cell is not None:
             if fwd_cell.type == 'lava':
@@ -428,13 +429,20 @@ class ContinuousSafeExplorationEnv(SafeExplorationEnv):
                 if not self.pause_stats:
                     self.statistics_arr['lava_count'][-1] += 1
                 info['reason'] = f'Lava at {self.agent_pos}'
-            elif fwd_cell.type == 'goal' or dist < 0.25:
+            elif fwd_cell.type == 'goal' or dist < 0.5:
                 reward = STEP_COST * self.max_steps * 2
                 info['reason'] = f'Goal at {self.agent_pos}'
                 done = True
-                self.statistics_arr['goal'][-1] += 1
+                if not self.pause_stats:
+                    self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
                 reward = -1
+        elif dist < 0.5:
+            reward = STEP_COST * self.max_steps * 2
+            info['reason'] = f'Goal at {self.agent_pos}'
+            done = True
+            if not self.pause_stats:
+                self.statistics_arr['goal'][-1] += 1
 
         reward += float((15. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * STEP_COST * self.max_steps * 2) * 0.01
 
