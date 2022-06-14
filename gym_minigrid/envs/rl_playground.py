@@ -23,19 +23,25 @@ class SafeExplorationEnv(MiniGridEnv):
     Environment with wall or lava obstacles, sparse reward.
     """
 
-    def __init__(self, size=9, lava_setup='', initial_state=(3, 2), max_steps=50, offline_regions=False,
+    def __init__(self, size=9, lava_setup='', max_steps=50, offline_regions=False,
                  rand_choices=3, device=torch.device('cuda'), sparse_reward=True, ENV_CACHING = True):
-        self.initial_state = initial_state
         self.offline_regions = offline_regions
         self.statistics_arr = dict(lava_count=[0], terminalstates=[], goal=[0])
         self.pause_stats = False
         self.ENV_CACHING = ENV_CACHING
         lava_setups = {
-            'corner': self.corner_lava,
-            'wall': self.wall_lava,
-            'none': lambda width, height, y_wall, end_x_wall: ()
+            'v0': self.wall_lava,
+            'v1': self.corner_lava,
+            'v2': self.maze_lava
         }
+        init_states = {
+            'v0': (3, 2),
+            'v1': (3, 3),
+            'v2': (21, 16),
+        }
+        self.initial_state = init_states[lava_setup]
         self.device = device
+        self.lava_choice = lava_setup
         self.lava_setup = lava_setups[lava_setup]
         self.rand_choices = rand_choices
         self.sparse_reward = sparse_reward
@@ -70,8 +76,40 @@ class SafeExplorationEnv(MiniGridEnv):
     #         if state_vector.squeeze()[1] < 0:
     #             self.grid.set(col, row, Floor(color='blue'))
 
+    def maze_lava(self, width, height, y_wall, end_x_wall):
+        self.goal_state = np.array([3, 4])
+        paths = {(4, 4), (5, 4), (6, 4), (7, 4), (8, 4), (9, 4), (10, 4), (11, 4), (12, 4),
+                (4, 3), (5, 3), (6, 3), (7, 3), (8, 3), (9, 3), (10, 3), (11, 3), (12, 3),
+                (11, 5), (12, 5),
+                (11, 6), (12, 6),
+                (11, 7), (12, 7),
+                (11, 8), (12, 8),
+                (11, 9), (12, 9), (13, 9), (14, 9), (15, 9), (16, 9),
+                (11, 10), (12, 10), (13, 10), (14, 10), (15, 10), (16, 10),
+                (15, 11), (16, 11),
+                (15, 12), (16, 12),
+                (15, 13), (16, 13),
+                (15, 14), (16, 14),
+                (11, 15), (12, 15), (13, 15), (14, 15), (15, 15), (16, 15),
+                (11, 16), (12, 16), (13, 16), (14, 16), (15, 16), (16, 16),
+                (3, 16), (4, 16), (5, 16), (6, 16), (7, 16), (8, 16), (9, 16), (10, 16),
+                (11, 17), (12, 17), (13, 17), (14, 17), (15, 17), (16, 17),
+                (3, 17), (4, 17), (5, 17), (6, 17), (7, 17), (8, 17), (9, 17), (10, 17),
+                (10, 15), (9, 15), (8, 15), (3, 4), (21, 15), (7, 15),
+                (7, 12), (7, 11), (8, 11), (9, 11), (9, 10), (6, 15), (5, 15), (4, 15), (4, 14),
+                (6, 14),
+                (5, 14), (5, 13), (5, 12), (5, 11), (5, 10), (5, 9), (5, 8), (5, 7), (5, 6), (5, 5),
+                (4, 13), (4, 12), (4, 11), (4, 10), (4, 9), (4, 8), (4, 7), (4, 6), (4, 5),
+                (3, 15), (3, 14), (3, 13), (3, 12), (3, 11), (3, 10), (3, 9), (3, 8), (3, 7), (3, 6), (3, 5),
+                (2, 16), (2, 15), (2, 14), (2, 13), (2, 12), (2, 11), (2, 10), (2, 9), (2, 8), (2, 7), (2, 6), (2, 5),
+                (2, 4), (2, 3), (3, 3), (4, 3)}
+
+        for r in range(1, height-1):
+            for c in range(1, width-1):
+                if (c, r) not in paths:
+                    self.put_obj(Lava(), c, r)
+
     def corner_lava(self, width, height, y_wall, end_x_wall):
-        self.wall_lava(width, height, y_wall, end_x_wall)
 
         corner_height = 3
         for c in range(corner_height):
@@ -79,12 +117,44 @@ class SafeExplorationEnv(MiniGridEnv):
         # self.grid.vert_wall(end_x_wall+1, lava_y, 2, Lava)
         # for i in range(2):
         #     self.grid.horz_wall(1, y_wall+i+1, end_x_wall-i, Lava)
+        self.put_obj(Lava(), 1, 1)
+        self.put_obj(Lava(), 2, 2)
+        self.put_obj(Lava(), 2, 3)
+
+        self.put_obj(Lava(), width-5, 2)
+        self.put_obj(Lava(), width-2, 5)
+        self.put_obj(Lava(), 4, height-2)
+        self.put_obj(Lava(), width//2, height//2)
+        self.put_obj(Lava(), 4, height-5)
+        self.put_obj(Lava(), 3, 4)
+
+        self.put_obj(Lava(), 4, height//2 + 1)
+        self.put_obj(Lava(), 5, height//2 + 1)
+        self.put_obj(Lava(), 3, height//2 + 2)
+        self.put_obj(Lava(), 4, height//2 + 2)
+        self.put_obj(Lava(), 5, height//2 + 2)
+        self.put_obj(Lava(), 6, height//2 + 2)
+        self.put_obj(Lava(), 2, height//2 + 3)
+        self.put_obj(Lava(), 3, height//2 + 3)
+        self.put_obj(Lava(), 4, height//2 + 3)
+        self.put_obj(Lava(), 5, height//2 + 3)
+        self.put_obj(Lava(), 6, height//2 + 3)
+        self.put_obj(Lava(), 3, height//2 + 4)
+        self.put_obj(Lava(), 4, height//2 + 4)
+        self.put_obj(Lava(), 4, height//2 + 5)
+        self.put_obj(Lava(), 4, height//2 + 8)
+        self.put_obj(Lava(), 4, height - 4)
+
+        self.put_obj(Lava(), width-7, height-4)
+        self.put_obj(Lava(), width//2 - 3, height-8)
+        self.goal_state = np.array([width-5, height - 6])
 
     def wall_lava(self, width, height, y_wall, end_x_wall):
         # Place lava (to measure safety of training)
         self.grid.horz_wall(1, y_wall + 1, end_x_wall, Lava)
         self.grid.horz_wall(1, y_wall, end_x_wall, Lava)
         self.grid.horz_wall(1, y_wall - 1, end_x_wall, Lava)
+        self.goal_state = np.array([3, height - 4])
         # self.grid.vert_wall(width-2, 1, height-2, Lava)
 
     def _gen_grid(self, width, height, state=None, dir=None):
@@ -116,9 +186,8 @@ class SafeExplorationEnv(MiniGridEnv):
 
         self.step_count = 0
 
-        self.goal_state = np.array([3, height - 4])
-        self.put_obj(Goal(), self.goal_state[0], self.goal_state[1])
         self.lava_setup(width, height, y_wall, end_x_wall)
+        self.put_obj(Goal(), self.goal_state[0], self.goal_state[1])
         if self.offline_regions:
             self.setup_offline_regions()
         self.mission = (
@@ -142,9 +211,9 @@ class SafeExplorationEnv(MiniGridEnv):
                                      n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA, deduplicate=True):
 
         arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate))
-        cache_path = f'{OUTPUT_LOCATION}/datasetcache/{arg_string}.pkl'
+        cache_path = f'{OUTPUT_LOCATION}/datasetcache/{self.lava_choice}:{arg_string}.pkl'
         print(f'deduplicate: {deduplicate}')
-        if os.path.exists(cache_path) and os.path.isfile(cache_path) and self.ENV_CACHING:
+        if os.path.exists(cache_path) and os.path.isfile(cache_path):
             print(f'loading from cache: {cache_path}')
             dataset = torch.load(cache_path)
             shift_transitions = dataset[0].state.device != self.device
@@ -318,13 +387,24 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                     self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
                 reward = -1
+        elif np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) < 0.5:
+            done = True
+            reward = STEP_COST * self.max_steps * 2
+            print(reward)
+            info['reason'] = f'Goal at {self.agent_pos}'
+            info['termination'] = TerminationCondition.GOAL
+            if not self.pause_stats:
+                self.statistics_arr['goal'][-1] += 1
 
-        if not self.sparse_reward:
-            reward += float((15. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * STEP_COST * self.max_steps * 1.5) * 0.01
+        if not SPARSE_REWARD or self.lava_choice == 'v1' or self.lava_choice == 'v2':
+            # reward += np.exp(-np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state))/5)*0.01
+            reward += float((1. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * STEP_COST * self.max_steps * 1.5) * 0.01
 
+        # if self.lava_choice == 'v2':
+        #     reward += 1.2
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
         self.done = done
-        return info['state_vector'], MULTIPLIER * reward, done, info
+        return info['state_vector'], reward, done, info
 
     def reset(self):
         self.pause_stats = False
