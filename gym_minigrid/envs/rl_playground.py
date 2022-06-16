@@ -141,7 +141,7 @@ class SafeExplorationEnv(MiniGridEnv):
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
                                      n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA, deduplicate=True):
 
-        arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate))
+        arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate, MULTIPLIER, STEP_COST))
         cache_path = f'{OUTPUT_LOCATION}/datasetcache/{arg_string}.pkl'
         print(f'deduplicate: {deduplicate}')
         if os.path.exists(cache_path) and os.path.isfile(cache_path) and self.ENV_CACHING:
@@ -318,7 +318,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                     self.statistics_arr['goal'][-1] += 1
             elif fwd_cell.type == 'wall':
                 reward = -1
-
+        
         if not self.sparse_reward:
             reward += float((15. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * STEP_COST * self.max_steps * 1.5) * 0.01
 
