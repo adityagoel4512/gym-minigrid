@@ -39,6 +39,26 @@ class SafeExplorationEnv(MiniGridEnv):
             'v1': (3, 3),
             'v2': (21, 16),
         }
+        unc_penalised_rewards = {
+            'v0': -5.765 if sparse_reward else -50,
+            'v1': -2
+        }
+
+        step_costs = {
+            'v0': 0.01, 
+            'v1': 0.01,
+        }
+
+        multipliers = {
+            'v0': 0.1,
+            'v1': 0.1
+        }
+
+        self.MULTIPLIER = multipliers[lava_setup]
+        self.STEP_COST = step_costs[lava_setup] # changed this in this run
+
+        self.UNC_PENALISED_REWARD = unc_penalised_rewards[lava_setup]
+
         self.initial_state = init_states[lava_setup]
         self.device = device
         self.lava_choice = lava_setup
@@ -118,10 +138,14 @@ class SafeExplorationEnv(MiniGridEnv):
         # for i in range(2):
         #     self.grid.horz_wall(1, y_wall+i+1, end_x_wall-i, Lava)
         self.put_obj(Lava(), 1, 1)
+        self.put_obj(Lava(), 1, 2)
+        self.put_obj(Lava(), 1, 3)
         self.put_obj(Lava(), 2, 2)
         self.put_obj(Lava(), 2, 3)
 
         self.put_obj(Lava(), width-5, 2)
+        self.put_obj(Lava(), width-4, 3)
+        self.put_obj(Lava(), width-3, 4)
         self.put_obj(Lava(), width-2, 5)
         self.put_obj(Lava(), 4, height-2)
         self.put_obj(Lava(), width//2, height//2)
@@ -352,7 +376,7 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         self.actions = DiscreteActions
         self.action_space = gym.spaces.Discrete(len(self.actions))
         self.done = False
-        print(f'sparse reward: {SPARSE_REWARD}')
+        print(f'sparse reward: {self.sparse_reward}')
 
     def step(self, action):
         if self.done:
@@ -373,13 +397,13 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         if fwd_cell is not None and action == self.actions.forward:
             if fwd_cell.type == 'lava':
                 # reward = -100 - 2.1*(self.max_steps - self.step_count)
-                reward = -self.max_steps * STEP_COST 
+                reward = -self.max_steps * self.STEP_COST
                 info['reason'] = f'Lava at {self.agent_pos}'
                 info['termination'] = TerminationCondition.LAVA
                 if not self.pause_stats:
                     self.statistics_arr['lava_count'][-1] += 1
             elif fwd_cell.type == 'goal':
-                reward = STEP_COST * self.max_steps * 2
+                reward = self.STEP_COST * self.max_steps * 2
                 print(reward)
                 info['reason'] = f'Goal at {self.agent_pos}'
                 info['termination'] = TerminationCondition.GOAL
@@ -389,22 +413,22 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
                 reward = -1
         elif np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) < 0.5:
             done = True
-            reward = STEP_COST * self.max_steps * 2
+            reward = self.STEP_COST * self.max_steps * 2
             print(reward)
             info['reason'] = f'Goal at {self.agent_pos}'
             info['termination'] = TerminationCondition.GOAL
             if not self.pause_stats:
                 self.statistics_arr['goal'][-1] += 1
 
-        if not SPARSE_REWARD or self.lava_choice == 'v1' or self.lava_choice == 'v2':
-            # reward += np.exp(-np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state))/5)*0.01
-            reward += float((1. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * STEP_COST * self.max_steps * 1.5) * 0.01
+        if not self.sparse_reward or self.lava_choice == 'v1' or self.lava_choice == 'v2':
+            reward += np.exp(-np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state))/5)*0.01
+            reward += float((1. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * self.STEP_COST * self.max_steps * 1.5) * 0.01
 
         # if self.lava_choice == 'v2':
         #     reward += 1.2
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
         self.done = done
-        return info['state_vector'], reward, done, info
+        return info['state_vector'], self.MULTIPLIER * reward, done, info
 
     def reset(self):
         self.pause_stats = False
