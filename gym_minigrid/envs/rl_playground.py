@@ -234,7 +234,7 @@ class SafeExplorationEnv(MiniGridEnv):
     def transitions_for_offline_data(self, extra_data=False, include_lava_actions=False, exclude_lava_neighbours=False,
                                      n_step=1, cut_step_cost=False, GAMMA=OFFLINE_GAMMA, deduplicate=True):
 
-        arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate, MULTIPLIER, STEP_COST, self.lava_choice))
+        arg_string = ':'.join(str(u) for u in (extra_data, include_lava_actions, exclude_lava_neighbours, n_step, cut_step_cost, GAMMA, deduplicate, self.MULTIPLIER, self.STEP_COST, self.lava_choice))
         cache_path = f'{OUTPUT_LOCATION}/datasetcache/{arg_string}.pkl'
         print(f'deduplicate: {deduplicate}')
         if os.path.exists(cache_path) and os.path.isfile(cache_path):
@@ -378,6 +378,8 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
         self.done = False
         print(f'sparse reward: {self.sparse_reward}')
 
+    def __repr__(self):
+        return repr({'MULTIPLIER': self.MULTIPLIER, 'STEP_COST': self.STEP_COST, 'UNC_PENALISED_REWARD': self.UNC_PENALISED_REWARD, 'LAVA_SETUP': self.lava_choice})
     def step(self, action):
         if self.done:
             # print('DiscreteSafeExplorationEnv is done but step invoked. Returning')
@@ -420,9 +422,9 @@ class DiscreteSafeExplorationEnv(SafeExplorationEnv):
             if not self.pause_stats:
                 self.statistics_arr['goal'][-1] += 1
 
-        if not self.sparse_reward or self.lava_choice == 'v1' or self.lava_choice == 'v2':
-            reward += np.exp(-np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state))/5)*0.01
-            reward += float((1. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * self.STEP_COST * self.max_steps * 1.5) * 0.01
+        # if not self.sparse_reward or self.lava_choice == 'v1' or self.lava_choice == 'v2':
+            # reward += np.exp(-np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state))/5)*0.01
+            # reward += float((1. - np.sqrt(np.dot(self.agent_pos-self.goal_state, self.agent_pos-self.goal_state)) + self.agent_pos[1]) * self.STEP_COST * self.max_steps * 1.5) * 0.01
 
         info = dict(state_vector=self.construct_state_vector(self.agent_pos, self.agent_dir), **info)
         self.done = done
